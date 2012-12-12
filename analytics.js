@@ -1,46 +1,59 @@
 (function () {
     // A reference to the global object.
-    var root = this;
+    var root = this,
     // Whether analytics.js has been initialized.
-    var initialized = false;
+        initialized = false,
     // Store the date when the page loaded, for analytics that depend on that.
-    var date = new Date();
+        date = new Date();
     // Store window.onload state so that analytics that rely on it (ffs) can be
     // loaded even after it has happened.
-    var loaded = false;
-    var oldonload = window.onload;
+        loaded = false,
+        oldonload = window.onload;
+        hasOwnProp = Object.prototype.hasOwnProperty,
+        toString = Object.prototype.toString,
+        basicEmailRegex = /.+\@.+\..+/,
+        PROTOCOL = window.location.protocol;
+
+
     window.onload = function () {
         loaded = true;
         if (isFunction(oldonload)) oldonload();
     };
 
 
-    var getSeconds = function (time) {
+    function getSeconds(time) {
         return Math.floor((new Date(time)) / 1000);
     };
 
+
     // A helper to shallow-ly clone objects, so that they don't get mangled or
     // added to by different analytics providers because of the reference.
-    var clone = function (obj) {
+    function clone(obj) {
         if (!obj) return;
         var clone = {};
-        for (var prop in obj) clone[prop] = obj[prop];
+        for (var prop in obj){
+
+          if (hasOwnProp.call(obj, prop)) {
+            clone[prop] = obj[prop];
+          }
+        }
+
         return clone;
     };
 
-    // Type detection helpers, copied from [underscore](https://github.com/documentcloud/underscore/blob/master/underscore.js#L928-L938).
-    var isObject = function (obj) {
-        return obj === Object(obj);
+    function isPlainObject(obj) {
+        return toString.call(obj) === '[object Object]';
     };
-    var isString = function (obj) {
-        return Object.prototype.toString.call(obj) === '[object String]';
-    };
-    var isFunction = function (obj) {
-        return Object.prototype.toString.call(obj) === '[object Function]';
+
+    function isString(obj) {
+        return toString.call(obj) === '[object String]';
+    }
+
+    function isFunction(obj) {
+        return toString.call(obj) === '[object Function]';
     };
 
     // Email detection helper.
-    var basicEmailRegex = /.+\@.+\..+/;
     var isEmail = function (input) {
         return basicEmailRegex.test(input);
     };
@@ -48,17 +61,34 @@
     // A helper to resolve a settings object. It allows for `settings` to be an
     // `fieldName` string in the case of no additional settings being needed.
     // Field name is the setting for the api key for our shorthand.
-    var resolveSettings = function (settings, fieldName) {
-        if (!isString(settings) && !isObject(settings))
+    function resolveSettings(settings, fieldName) {
+
+        if (!isString(settings) && !isPlainObject(settings))
             throw new Error('Encountered unresolvable settings value.');
 
         if (isString(settings)) {
+
             var apiKey = settings;
             settings = {};
             settings[fieldName] = apiKey;
+
         }
+
         return settings;
+
     };
+
+    // helper to load a script before first script
+    function loadScript(src, onload) {
+      var sc = document.createElement('script'), before = document.getElementsByTagName('script')[0];
+      sc.asnyc = true;
+      sc.type = 'text/javascript';
+      sc.src = PROTOCOL + src;
+
+      before.parentNode.insertBefore(sc, before);
+      before.onload = onload || before.onload;
+      return before;
+    }
 
 
     // The `analytics` object that will be exposed to you on the global object.
@@ -92,9 +122,18 @@
         initialize : function (providers) {
             this.providers = [];
             for (var key in providers) {
-                if (!availableProviders[key]) throw new Error('Couldn\'t find a provider named "'+key+'"');
+
+              if (hasOwnProp.call(providers, key)) {
+
+                if (!availableProviders[key]){
+                  throw new Error('Couldn\'t find a provider named "'+key+'"');
+                }
+
                 availableProviders[key].initialize(providers[key]);
                 this.providers.push(availableProviders[key]);
+
+              }
+
             }
 
             initialized = true;
@@ -119,7 +158,7 @@
         identify : function (userId, traits) {
             if (!initialized) return;
 
-            if (isObject(userId)) {
+            if (isPlainObject(userId)) {
                 traits = userId;
                 userId = null;
             }
@@ -131,10 +170,12 @@
                 userId = this.userId;
 
             for (var i = 0, provider; provider = this.providers[i]; i++) {
+
                 if (!provider.identify) continue;
-                var clonedTraits = clone(traits);
-                provider.identify(userId, clonedTraits);
+                provider.identify(userId, clone(traits));
+
             }
+
         },
 
 
@@ -156,10 +197,11 @@
         // `properties` - an optional dictionary of properties of the event.
         track : function (event, properties) {
             if (!initialized) return;
+
             for (var i = 0, provider; provider = this.providers[i]; i++) {
                 if (!provider.track) continue;
-                var clonedProperties = clone(properties);
-                provider.track(event, clonedProperties);
+                provider.track(event, clone(properties));
+
             }
         }
 
@@ -191,27 +233,20 @@
             // * Add `apiKey` to call to `_setAccount`.
             initialize : function (settings) {
                 this.settings = settings = resolveSettings(settings, 'trackingId');
-
                 var _gaq = _gaq || [];
+
                 _gaq.push(['_setAccount', settings.trackingId]);
 
                 if (this.settings.enhancedLinkAttribution === true) {
-                    var pluginUrl = (('https:' == document.location.protocol) ? 'https://ssl.' : 'http://www.') + 'google-analytics.com/plugins/ga/inpage_linkid.js';
-                    _gaq.push(['_require', 'inpage_linkid', pluginUrl]);
+                    _gaq.push(['_require', 'inpage_linkid', (('https:' === PROTOCOL) ? 'https://ssl.' : 'http://www.') + 'google-analytics.com/plugins/ga/inpage_linkid.js']);
                 }
-                if (this.settings.siteSpeedSampleRate != null &&
-                    typeof(this.settings.siteSpeedSampleRate) === 'number') {
+
+                if (this.settings.siteSpeedSampleRate != null && typeof(this.settings.siteSpeedSampleRate) === 'number') {
                     _gaq.push(['_setSiteSpeedSampleRate', this.settings.siteSpeedSampleRate]);
                 }
 
                 _gaq.push(['_trackPageview']);
-
-                (function() {
-                    var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-                    ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
-                    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-                })();
-
+                loadScript('//google-analytics.com/ga.js');
                 window._gaq = _gaq;
             },
 
@@ -234,14 +269,11 @@
             // * Concatenate in the `apiKey`.
             initialize : function (settings) {
                 this.settings = settings = resolveSettings(settings, 'apiKey');
-
                 var _kmq = _kmq || [];
+
                 function _kms(u){
                     setTimeout(function(){
-                        var d = document, f = d.getElementsByTagName('script')[0],
-                        s = d.createElement('script');
-                        s.type = 'text/javascript'; s.async = true; s.src = u;
-                        f.parentNode.insertBefore(s, f);
+                      loadScript(u);
                     }, 1);
                 }
                 _kms('//i.kissmetrics.com/i.js');
@@ -314,8 +346,7 @@
                 }
 
                 if (traits) {
-                    this.aliasTraits(traits);
-                    window.mixpanel.register(traits);
+                    window.mixpanel.register(this.aliasTraits(traits));
                 }
 
                 if (this.settings.people === true) {
@@ -327,31 +358,23 @@
             },
 
 
+            // much more efficient to copy traits over to new obj
+            // and discard the old one
             aliasTraits : function (traits) {
-                if (traits.email) {
-                    traits['$email'] = traits.email;
-                    delete traits.email;
-                }
 
-                if (traits.name) {
-                    traits['$name']  = traits.name;
-                    delete traits.name;
-                }
+              var transformed = {};
+              for(var k in traits) {
+                if (hasOwnProp.call(traits,k)){
 
-                if (traits.username) {
-                    traits['$username'] = traits.username;
-                    delete traits.username;
-                }
+                  (function(key, trait){
+                    transformed['$' + key] = trait;
+                  }(k,traits[k]));
 
-                if (traits.lastSeen) {
-                    traits['$last_login'] = traits.lastSeen;
-                    delete traits.lastSeen;
                 }
+              }
 
-                if (traits.createdAt) {
-                    traits['$created'] = traits.createdAt;
-                    delete traits.createdAt;
-                }
+              return transformed;
+
             },
 
             track : function (event, properties) {
@@ -388,24 +411,18 @@
                     custom_data : traits || {},
                 };
 
-                if (traits) {
-                    if (traits.email)
-                        window.intercomSettings.email = traits.email;
-                    if (traits.name)
-                        window.intercomSettings.name = traits.name;
-                    if (traits.createdAt)
-                        window.intercomSettings.created_at = getSeconds(traits.createdAt);
+                if (traits) { // undefiend === undefined; so we don't need to check
+                    window.intercomSettings.email = traits.email; 
+                    window.intercomSettings.name = traits.name;
+                    window.intercomSettings.created_at = getSeconds(traits.createdAt);
                 } else if (isEmail(userId)) {
                     window.intercomSettings.email = userId;
                 }
 
                 function async_load() {
-                    var s = document.createElement('script');
-                    s.type = 'text/javascript'; s.async = true;
-                    s.src = 'https://api.intercom.io/api/js/library.js';
-                    var x = document.getElementsByTagName('script')[0];
-                    x.parentNode.insertBefore(s, x);
+                  loadScript('//api.intercom.io/api/js/library.js');
                 }
+
                 if (window.attachEvent) {
                     window.attachEvent('onload', async_load);
                 } else {
@@ -432,13 +449,11 @@
                     var a,b,c;a=function(f){return function(){_cio.push([f].
                     concat(Array.prototype.slice.call(arguments,0)))}};b=["identify",
                     "track"];for(c=0;c<b.length;c++){_cio[b[c]]=a(b[c])};
-                    var t = document.createElement('script'),
-                        s = document.getElementsByTagName('script')[0];
-                    t.async = true;
-                    t.id    = 'cio-tracker';
-                    t.setAttribute('data-site-id', settings.siteId);
-                    t.src = 'https://assets.customer.io/assets/track.js';
-                    s.parentNode.insertBefore(t, s);
+
+                    var s = loadScript('//assets.customer.io/assets/track.js');
+                    s.id = 'cio-tracker';
+                    s.setAttribute('data-site-id', settings.siteId);
+
                 })();
 
                 window._cio = _cio;
@@ -448,16 +463,15 @@
                 // Don't do anything if we just have traits.
                 if (!userId) return;
 
-                traits = traits || {};
-                var properties = clone(traits);
+                var properties = clone((traits || {}));
                 properties.id = userId;
-                if (properties.email === undefined && isEmail(userId))
-                    properties.email = userId;
+                properties.email = (properties.email === undefined && isEmail(userId)) ? userId : properties.email;
 
                 if (properties.createdAt) {
                     properties.created_at = getSeconds(properties.createdAt);
                     delete properties.createdAt;
                 }
+
                 window._cio.identify(properties);
             },
 
@@ -479,10 +493,7 @@
                 this.settings = settings = resolveSettings(settings, 'apiKey');
 
                 (function(){
-                    var a=document.createElement("script");
-                    var b=document.getElementsByTagName("script")[0];
-                    a.src=document.location.protocol+"//dnn506yrbagrg.cloudfront.net/pages/scripts/"+settings.apiKey+".js?"+Math.floor(new Date().getTime()/3600000);
-                    a.async=true;a.type="text/javascript";b.parentNode.insertBefore(a,b);
+                    loadScript("//dnn506yrbagrg.cloudfront.net/pages/scripts/"+settings.apiKey+".js?"+Math.floor(new Date().getTime()/3600000));
                 })();
             }
         },
@@ -564,15 +575,10 @@
                 /** CONFIGURATION END **/
                 (function(){
                     window._sf_endpt = date.getTime();
-                    var e = document.createElement("script");
-                    e.setAttribute("language", "javascript");
-                    e.setAttribute("type", "text/javascript");
-                    e.setAttribute("src",
-                        (("https:" == document.location.protocol) ?
+                    loadScript((("https:" == document.location.protocol) ?
                             "https://a248.e.akamai.net/chartbeat.download.akamai.com/102508/" :
                             "http://static.chartbeat.com/") +
-                        "js/chartbeat.js");
-                    document.body.appendChild(e);
+                            "js/chartbeat.js");
                 })();
             }
 
